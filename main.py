@@ -1,0 +1,76 @@
+from datasets import load_dataset
+from llama_cpp import GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, Llama
+from sacrebleu import corpus_bleu, corpus_chrf
+from tqdm import tqdm
+
+MODEL_PATH = {
+    "1_8B": "/mnt/c/Users/wangjiezhe/.lmstudio/models/tencent/Hy-MT2-1.8B-GGUF/Hy-MT2-1.8B-Q8_0.gguf",
+    "7B": "/mnt/c/Users/wangjiezhe/.lmstudio/models/tencent/Hy-MT2-7B-GGUF/Hy-MT2-7B-Q4_K_M.gguf",
+}
+
+MODEL_NAME = {"1_8B": "Hy-MT2-1.8B:Q8_0", "7B": "Hy-MT2-7B:Q4_K_M"}
+
+TYPE_KV = {"f16": GGML_TYPE_F16, "q8_0": GGML_TYPE_Q8_0, "q4_0": GGML_TYPE_Q4_0}
+
+USER_PROMPT = """Translate the following text into Chinese.
+Note that you should **only output the translated result without any additional explanation**:
+
+"""
+
+
+class LlamaModel:
+    def __init__(self, model_path, type_kv=GGML_TYPE_F16):
+        self.model_path = model_path
+        self.type_kv = type_kv
+
+    def __enter__(self):
+        self.llm = Llama(
+            model_path=self.model_path,
+            n_ctx=4096,
+            n_threads=12,
+            n_gpu_layers=-1,
+            verbose=False,
+            use_mmap=True,
+            flash_attn=True,
+            offload_kqv=True,
+            type_k=self.type_kv,
+            type_v=self.type_kv,
+        )
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.llm.close()
+
+    def translate(self, text, prompt=USER_PROMPT):
+        output = self.llm(
+            prompt + text,
+            temperature=0.7,
+            top_p=0.6,
+            top_k=20,
+            repeat_penalty=1.05,
+        )
+        return output["choices"][0]["text"].strip()
+
+
+def evaluate_llama():
+    ds = load_dataset("google/wmt24pp", name="en-zh_CN", split="train")
+    sources = [item["source"] for item in ds if not item["is_bad_source"]]
+    targets = [[item["target"]] for item in ds if not item["is_bad_source"]]
+    eng_scores = ""
+
+    for quant in ["1_8B", "7B"]:
+        for cache_type in ["f16", "q8_0", "q4_0"]:
+            with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
+                predictions = [model.translate(source) for source in tqdm(sources)]
+                bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
+                chrf_score = corpus_chrf(predictions, targets, word_order=2)
+                eng_scores += (
+                    f"{MODEL_NAME[quant]}\t{cache_type}\t{bleu_score}\t{chrf_score}\n"
+                )
+
+    print("Translate from English to Chinese:")
+    print(eng_scores)
+
+
+if __name__ == "__main__":
+    evaluate_llama()
