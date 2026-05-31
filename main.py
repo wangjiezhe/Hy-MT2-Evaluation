@@ -1,5 +1,6 @@
 from datasets import load_dataset
 from llama_cpp import GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, Llama
+from openai import OpenAI
 from sacrebleu import corpus_bleu, corpus_chrf
 from tqdm import tqdm
 
@@ -51,6 +52,16 @@ class LlamaModel:
         )
         return output["choices"][0]["text"].strip()
 
+    def translate_v1(self, text, prompt=USER_PROMPT):
+        response = self.llm.create_chat_completion_openai_v1(
+            messages=[
+                # {"role": "user", "content": prompt + text},
+                {"role": "system", "content": prompt},
+                {"role": "user", "content": text},
+            ],
+        )
+        return response.choices[0].message.content
+
 
 def evaluate_llama():
     ds = load_dataset("google/wmt24pp", name="en-zh_CN", split="train")
@@ -61,16 +72,42 @@ def evaluate_llama():
     for quant in ["1_8B", "7B"]:
         for cache_type in ["f16", "q8_0", "q4_0"]:
             with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
-                predictions = [model.translate(source) for source in tqdm(sources)]
+                # predictions = [model.translate(source) for source in tqdm(sources)]
+                predictions = [model.translate_v1(source) for source in tqdm(sources)]
                 bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
                 chrf_score = corpus_chrf(predictions, targets, word_order=2)
-                eng_scores += (
-                    f"{MODEL_NAME[quant]}\t{cache_type}\t{bleu_score}\t{chrf_score}\n"
-                )
+                score = f"{MODEL_NAME[quant]}\t{cache_type}\t{bleu_score}\t{chrf_score}"
+                print(score)
+                eng_scores += f"{score}\n"
 
-    print("Translate from English to Chinese:")
+    print("\nTranslate from English to Chinese:")
     print(eng_scores)
+
+
+def evaluate_vllm():
+    ds = load_dataset("google/wmt24pp", name="en-zh_CN", split="train")
+    sources = [item["source"] for item in ds if not item["is_bad_source"]]
+    targets = [[item["target"]] for item in ds if not item["is_bad_source"]]
+    predictions = []
+
+    client = OpenAI(base_url="http://localhost:8118/v1", api_key="EMPTY")
+
+    for source in tqdm(sources):
+        response = client.chat.completions.create(
+            model="tencent/Hy-MT2-1.8B",
+            messages=[
+                # {"role": "user", "content": USER_PROMPT + source},
+                {"role": "system", "content": USER_PROMPT},
+                {"role": "user", "content": source},
+            ],
+        )
+        predictions.append(response.choices[0].message.content)
+
+    bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
+    chrf_score = corpus_chrf(predictions, targets, word_order=2)
+    print(f"tencent/Hy-MT2-1.8B\t{bleu_score}\t{chrf_score}")
 
 
 if __name__ == "__main__":
     evaluate_llama()
+    # evaluate_vllm()
