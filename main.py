@@ -52,13 +52,19 @@ class LlamaModel:
         )
         return output["choices"][0]["text"].strip()
 
-    def translate_v1(self, text, prompt=USER_PROMPT):
-        response = self.llm.create_chat_completion_openai_v1(
-            messages=[
-                # {"role": "user", "content": prompt + text},
+    def translate_v1(self, text, prompt=USER_PROMPT, system_prompt=True):
+        message = (
+            [
                 {"role": "system", "content": prompt},
                 {"role": "user", "content": text},
-            ],
+            ]
+            if system_prompt
+            else [
+                {"role": "user", "content": prompt + text},
+            ]
+        )
+        response = self.llm.create_chat_completion_openai_v1(
+            messages=message,
         )
         return response.choices[0].message.content
 
@@ -74,6 +80,34 @@ def evaluate_llama():
             with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
                 # predictions = [model.translate(source) for source in tqdm(sources)]
                 predictions = [model.translate_v1(source) for source in tqdm(sources)]
+                bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
+                chrf_score = corpus_chrf(predictions, targets, word_order=2)
+                score = f"{MODEL_NAME[quant]}\t{cache_type}\t{bleu_score}\t{chrf_score}"
+                print(score)
+                eng_scores += f"{score}\n"
+
+    print("\nTranslate from English to Chinese:")
+    print(eng_scores)
+
+
+def evaluate2_llama():
+    ds = load_dataset("google/wmt24pp", name="en-zh_CN", split="train")
+    sources = [item["source"] for item in ds if not item["is_bad_source"]]
+    targets = [[item["target"]] for item in ds if not item["is_bad_source"]]
+    eng_scores = ""
+
+    quant = "7B"
+    zh_prompt = "将以下文本翻译为中文，注意**只需要输出翻译后的结果，不要额外解释**：\n"
+
+    for use_system in [False, True]:
+        for cache_type in ["f16", "q8_0", "q4_0"]:
+            with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
+                predictions = [
+                    model.translate_v1(
+                        source, prompt=zh_prompt, system_prompt=use_system
+                    )
+                    for source in tqdm(sources)
+                ]
                 bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
                 chrf_score = corpus_chrf(predictions, targets, word_order=2)
                 score = f"{MODEL_NAME[quant]}\t{cache_type}\t{bleu_score}\t{chrf_score}"
@@ -109,5 +143,6 @@ def evaluate_vllm():
 
 
 if __name__ == "__main__":
-    evaluate_llama()
+    # evaluate_llama()
     # evaluate_vllm()
+    evaluate2_llama()
