@@ -5,11 +5,11 @@ from sacrebleu import corpus_bleu, corpus_chrf
 from tqdm import tqdm
 
 MODEL_PATH = {
-    "1_8B": "/mnt/c/Users/wangjiezhe/.lmstudio/models/tencent/Hy-MT2-1.8B-GGUF/Hy-MT2-1.8B-Q8_0.gguf",
+    "1.8B": "/mnt/c/Users/wangjiezhe/.lmstudio/models/tencent/Hy-MT2-1.8B-GGUF/Hy-MT2-1.8B-Q8_0.gguf",
     "7B": "/mnt/c/Users/wangjiezhe/.lmstudio/models/tencent/Hy-MT2-7B-GGUF/Hy-MT2-7B-Q4_K_M.gguf",
 }
 
-MODEL_NAME = {"1_8B": "Hy-MT2-1.8B:Q8_0", "7B": "Hy-MT2-7B:Q4_K_M"}
+MODEL_NAME = {"1.8B": "Hy-MT2-1.8B:Q8_0", "7B": "Hy-MT2-7B:Q4_K_M"}
 
 TYPE_KV = {"f16": GGML_TYPE_F16, "q8_0": GGML_TYPE_Q8_0, "q4_0": GGML_TYPE_Q4_0}
 
@@ -65,17 +65,26 @@ class LlamaModel:
         )
         response = self.llm.create_chat_completion_openai_v1(
             messages=message,
+            temperature=0.7,
+            top_p=0.8,
+            top_k=20,
+            repeat_penalty=1.05,
         )
         return response.choices[0].message.content
 
 
-def evaluate_llama():
+def load_wmt24pp():
     ds = load_dataset("google/wmt24pp", name="en-zh_CN", split="train")
     sources = [item["source"] for item in ds if not item["is_bad_source"]]
     targets = [[item["target"]] for item in ds if not item["is_bad_source"]]
+    return sources, targets
+
+
+def evaluate_llama():
+    sources, targets = load_wmt24pp()
     eng_scores = ""
 
-    for quant in ["1_8B", "7B"]:
+    for quant in ["1.8B", "7B"]:
         for cache_type in ["f16", "q8_0", "q4_0"]:
             with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
                 # predictions = [model.translate(source) for source in tqdm(sources)]
@@ -91,9 +100,7 @@ def evaluate_llama():
 
 
 def evaluate2_llama():
-    ds = load_dataset("google/wmt24pp", name="en-zh_CN", split="train")
-    sources = [item["source"] for item in ds if not item["is_bad_source"]]
-    targets = [[item["target"]] for item in ds if not item["is_bad_source"]]
+    sources, targets = load_wmt24pp()
     eng_scores = ""
 
     quant = "7B"
@@ -118,10 +125,30 @@ def evaluate2_llama():
     print(eng_scores)
 
 
+def evaluate3_llama():
+    sources, targets = load_wmt24pp()
+    eng_scores = ""
+
+    quant = "7B"
+    cache_type = "q4_0"
+    for use_system in [False, True]:
+        with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
+            predictions = [
+                model.translate_v1(source, system_prompt=use_system)
+                for source in tqdm(sources)
+            ]
+            bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
+            chrf_score = corpus_chrf(predictions, targets, word_order=2)
+            score = f"{MODEL_NAME[quant]}\t{cache_type}\t{bleu_score}\t{chrf_score}"
+            print(score)
+            eng_scores += f"{score}\n"
+
+    print("\nTranslate from English to Chinese:")
+    print(eng_scores)
+
+
 def evaluate_vllm():
-    ds = load_dataset("google/wmt24pp", name="en-zh_CN", split="train")
-    sources = [item["source"] for item in ds if not item["is_bad_source"]]
-    targets = [[item["target"]] for item in ds if not item["is_bad_source"]]
+    sources, targets = load_wmt24pp()
     predictions = []
 
     client = OpenAI(base_url="http://localhost:8118/v1", api_key="EMPTY")
@@ -145,4 +172,5 @@ def evaluate_vllm():
 if __name__ == "__main__":
     # evaluate_llama()
     # evaluate_vllm()
-    evaluate2_llama()
+    # evaluate2_llama()
+    evaluate3_llama()
