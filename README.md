@@ -105,14 +105,14 @@ VIRTUAL_ENV=.venv_vllm uv run vllm serve tencent/Hy-MT2-1.8B --tensor-parallel-s
 
 使用 user prompt:
 
-| 模型 | K&V 缓存量化 | BLEU | chrF2++ | 时间 |
+| 模型 | K&V 缓存量化 | BLEU | chrF++ | 时间 |
 | :---: | :---: | :---: | :---: | :--: |
 | Hy-MT2-1.8B | - | 52.64 | 33.26 | 11:55 |
 | Hy-MT2-1.8B | fp8 | 52.64 | 33.26 | 12:14 |
 
 使用 system prompt:
 
-| 模型 | K&V 缓存量化 | BLEU | chrF2++ | 时间 |
+| 模型 | K&V 缓存量化 | BLEU | chrF++ | 时间 |
 | :---: | :---: | :---: | :---: | :--: |
 | Hy-MT2-1.8B | - | 56.68 | 35.17 | 11:03 |
 
@@ -133,12 +133,12 @@ docker run --gpus all -it --rm \
 
 使用 system prompt:
 
-| 模型 | 后端 | BLEU | chrF2++ | 时间 |
+| 模型 | 后端 | BLEU | chrF++ | 时间 |
 | :---: | :---: | :---: | :---: | :--: |
 | Hy-MT2-1.8B | FlashInfer | 54.82 | 32.91 | 10:17 |
 | Hy-MT2-1.8B | Flash Attention | 54.82 | 32.91 | 10:24 |
 
-使用 FlashInfer 比 Flash Attention 占用的显存要多（约1G〖？〗）。
+使用 FlashInfer 比 Flash Attention 占用的显存要多（约1G〖?〗）。
 
 ## 显存占用（预估）
 
@@ -179,5 +179,14 @@ docker run --gpus all -it --rm \
 ## 结论
 
 - 量化的大模型优于非量化的小模型
+- 开启K&V缓存量化，速度略有下降（与实际使用的感官不同〖?〗），但是显存占用明显减少。
+   - 在8G显存（实际可用6.92G）的RTX4060上，
 - 对于量化的小模型，使用 K&V 缓存量化没有太大的负面影响。
-   + 实测，在使用 KISS Translator 开启聚合之后，有一定概率出现漏翻的情况。使用 Trancy 时较少遇到这种情况。
+   + 实测，在使用 KISS Translator 开启聚合之后，有一定概率出现漏翻的情况。
+   + 使用 Trancy 时较少遇到这种情况。
+- 官方推荐 `max_tokens=4096` 是有道理的，超过 4k 的输入经常会出现中间漏翻的情况。有时还会只翻译第一句就结束了。
+- `Hy-MT2-7B:Q4_K_M` 模型
+   - 上下文长度务必设为0！（否则经常直接返回上一个翻译结果。）
+   - 输入 ≈240 tokens/s，输出 ≈18 tokens/s
+   - 开启`q8_0`缓存量化，输入 ≈1.6k tokens/s，输出 ≈38 tokens/s
+   - 开启`q4_0`缓存量化，输入 ≈1.8k tokens/s，输出 ≈35 tokens/s
