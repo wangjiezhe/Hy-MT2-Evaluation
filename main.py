@@ -11,7 +11,7 @@ MODEL_PATH = {
 
 MODEL_NAME = {"1.8B": "Hy-MT2-1.8B:Q8_0", "7B": "Hy-MT2-7B:Q4_K_M"}
 
-TYPE_KV = {"f16": GGML_TYPE_F16, "q8_0": GGML_TYPE_Q8_0, "q4_0": GGML_TYPE_Q4_0}
+TYPE_KV = {"F16": GGML_TYPE_F16, "Q8_0": GGML_TYPE_Q8_0, "Q4_0": GGML_TYPE_Q4_0}
 
 USER_PROMPT = """Translate the following text into Chinese.
 Note that you should **only output the translated result without any additional explanation**:
@@ -85,7 +85,7 @@ def evaluate_llama():
     eng_scores = ""
 
     for quant in ["1.8B", "7B"]:
-        for cache_type in ["f16", "q8_0", "q4_0"]:
+        for cache_type in ["F16", "Q8_0", "Q4_0"]:
             with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
                 # predictions = [model.translate(source) for source in tqdm(sources)]
                 predictions = [model.translate_v1(source) for source in tqdm(sources)]
@@ -107,7 +107,7 @@ def evaluate2_llama():
     zh_prompt = "将以下文本翻译为中文，注意**只需要输出翻译后的结果，不要额外解释**：\n"
 
     for use_system in [False, True]:
-        for cache_type in ["f16", "q8_0", "q4_0"]:
+        for cache_type in ["F16", "Q8_0", "Q4_0"]:
             with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
                 predictions = [
                     model.translate_v1(
@@ -130,7 +130,7 @@ def evaluate3_llama():
     eng_scores = ""
 
     quant = "7B"
-    cache_type = "q4_0"
+    cache_type = "Q4_0"
     for use_system in [False, True]:
         with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
             predictions = [
