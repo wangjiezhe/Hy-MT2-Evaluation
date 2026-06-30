@@ -171,24 +171,35 @@ def evaluate_vllm():
 
 def evaluate_gemma4():
     sources, targets = load_wmt24pp()
+    # sources = sources[200:]
+    # targets = targets[200:]
     predictions = []
 
     client = OpenAI(base_url="http://localhost:1134/v1", api_key="EMPTY")
 
-    for source in tqdm(sources):
-        response = client.chat.completions.create(
-            model="unsloth/gemma-4-26B-A4B-it-qat-GGUF",
-            messages=[
-                {"role": "system", "content": USER_PROMPT},
-                {"role": "user", "content": source},
-            ],
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-        )
-        predictions.append(response.choices[0].message.content)
-
-    bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
-    chrf_score = corpus_chrf(predictions, targets, word_order=2)
-    print(f"unsloth/gemma-4-26B-A4B-it-qat-GGUF\t{bleu_score}\t{chrf_score}")
+    try:
+        for source, target in zip(sources, targets):
+            response = client.chat.completions.create(
+                model="unsloth/gemma-4-26B-A4B-it-qat-GGUF",
+                messages=[
+                    {"role": "system", "content": USER_PROMPT},
+                    {"role": "user", "content": source},
+                ],
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            )
+            prediction = response.choices[0].message.content
+            predictions.append(prediction)
+            print(source)
+            print(prediction)
+            print(target[0])
+            print()
+    except KeyboardInterrupt:
+        print("\nInterrupted! Calculating scores on available predictions...")
+    finally:
+        targets = targets[: len(predictions)]
+        bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
+        chrf_score = corpus_chrf(predictions, targets, word_order=2)
+        print(f"unsloth/gemma-4-26B-A4B-it-qat-GGUF\t{bleu_score}\t{chrf_score}")
 
 
 if __name__ == "__main__":
