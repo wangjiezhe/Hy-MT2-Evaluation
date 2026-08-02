@@ -60,6 +60,8 @@
 | Hy-MT2-1.8B:Q8_0*  |     q4_0     |  *48.85*  |  *25.12*  | 07:23 |
 | Hy-MT2-7B:Q4_K_M*  |     q4_0     | **63.49** | **45.78** | 15:12 |
 | Hy-MT2-7B:Q4_K_M** |     q4_0     |   50.65   |   34.41   | 16:04 |
+|                    |              |           |           |       |
+| Hy-MT2-30B-A3B:Q4_K_M*** |  q8_0  |  61.09    |   37.52   | 27:08 |
 
 使用 system prompt:
 
@@ -75,9 +77,31 @@
 | Hy-MT2-1.8B:Q8_0*  |     q4_0     |  *53.64*  |  *31.13*  | 07:00 |
 | Hy-MT2-7B:Q4_K_M*  |     q4_0     |   51.47   |   34.30   | 15:18 |
 | Hy-MT2-7B:Q4_K_M** |     q4_0     | **63.49** | **45.06** | 15:52 |
+|                    |              |           |           |       |
+| Hy-MT2-30B-A3B:Q4_K_M*** |  q8_0  |   61.09   |   37.52   | 27:43 |
 
 - *: 推荐参数重测
 - **: `top_p=0.8` 重测
+- ***: 使用下面的命令运行：
+
+```powershell
+llama-server.exe `
+	-m "Hy-MT2-30B-A3B-Q4_K_M.gguf" `
+	--alias tencent/Hy-MT2-30B-A3B-GGUF `
+	-c 4096 `
+	--port 1134 `
+	--fit on `
+	--cache-type-k q8_0 `
+	--cache-type-v q8_0 `
+	--temperature 0.7 `
+	--top-p 1.0 `
+	--top-k -1 `
+	--repeat-penalty 1.0 `
+	--load-mode mlock `
+	--jinja `
+	--parallel 1 `
+	-r '<eos:6124c78e>'
+```
 
 使用中文 prompt + user prompt::
 

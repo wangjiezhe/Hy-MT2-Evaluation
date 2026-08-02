@@ -202,9 +202,37 @@ def evaluate_gemma4():
         print(f"unsloth/gemma-4-26B-A4B-it-qat-GGUF\t{bleu_score}\t{chrf_score}")
 
 
+def evaluate4_llama():
+    sources, targets = load_wmt24pp()
+    predictions = []
+
+    client = OpenAI(base_url="http://localhost:1134/v1", api_key="EMPTY")
+
+    try:
+        for source in tqdm(sources):
+            response = client.chat.completions.create(
+                model="tencent/Hy-MT2-30B-A3B-GGUF",
+                messages=[
+                    {"role": "user", "content": USER_PROMPT + source},
+                    # {"role": "system", "content": USER_PROMPT},
+                    # {"role": "user", "content": source},
+                ],
+            )
+            prediction = response.choices[0].message.content
+            predictions.append(prediction)
+    except KeyboardInterrupt:
+        print("\nInterrupted! Calculating scores on available predictions...")
+    finally:
+        targets = targets[: len(predictions)]
+        bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
+        chrf_score = corpus_chrf(predictions, targets, word_order=2)
+        print(f"tencent/Hy-MT2-30B-A3B-GGUF\t{bleu_score}\t{chrf_score}")
+
+
 if __name__ == "__main__":
     # evaluate_llama()
     # evaluate_vllm()
     # evaluate2_llama()
     # evaluate3_llama()
-    evaluate_gemma4()
+    # evaluate_gemma4()
+    evaluate4_llama()
