@@ -186,6 +186,15 @@ docker run --gpus all -it --rm \
 | non-thinking |     q8_0     | 29.99 | 18.15  |  24:25  |
 |   thinking   |     q8_0     | 29.56 | 15.43  | 6:19:45 |
 
+## Index-Translate
+
+使用 LM Studio + system prompt:
+
+|           模型            | K&V 缓存量化 | BLEU  | chrF++ | 时间  |
+| :-----------------------: | :----------: | :---: | :----: | :---: |
+|  Index-Translate-2B:Q8_0  |     q8_0     | 39.17 | 20.77  | 08:54 |
+| Index-Translate-9B:Q4_K_M |     q8_0     | 39.17 | 20.77  | 17:51 |
+
 ## PPL
 
 > PPL 是 **Perplexity（困惑度）** 的缩写，它是衡量语言模型性能的常用指标，特别是在评估**经典语言模型**（**自回归**或**因果语言模型**）的生成任务时。
