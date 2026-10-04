@@ -1,8 +1,14 @@
+import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
 from datasets import load_dataset
 from llama_cpp import GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, Llama
 from openai import OpenAI
 from sacrebleu import corpus_bleu, corpus_chrf
 from tqdm import tqdm
+
+_local = threading.local()
 
 MODEL_PATH = {
     "2B": (
@@ -169,39 +175,54 @@ def evaluate_vllm():
     print(f"IndexTeam/Index-Translate-2B\t{bleu_score}\t{chrf_score}")
 
 
-def evaluate_lmstudio():
+def evaluate_lmstudio(model, max_workers: int = 4):
     sources, targets = load_wmt24pp()
-    # sources = sources[200:]
-    # targets = targets[200:]
-    predictions = []
-    MODEL = "IndexTeam/Index-Translate-9B"
+    # sources = sources[:10]
+    # targets = targets[:10]
+    predictions = [None] * len(sources)
 
-    client = OpenAI(base_url="http://localhost:1234/v1", api_key="EMPTY")
+    def get_client():
+        if not hasattr(_local, "client"):
+            _local.client = OpenAI(
+                base_url="http://localhost:1234/v1",
+                api_key="EMPTY",
+                timeout=300.0,
+            )
+        return _local.client
+
+    def translate(args):
+        idx, source = args
+        client = get_client()  # 线程内复用
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": USER_PROMPT},
+                {"role": "user", "content": source},
+            ],
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        )
+        return idx, response.choices[0].message.content
 
     try:
-        # for source, target in zip(sources, targets):
-        for source in tqdm(sources):
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=[
-                    {"role": "system", "content": USER_PROMPT},
-                    {"role": "user", "content": source},
-                ],
-                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-            )
-            prediction = response.choices[0].message.content
-            predictions.append(prediction)
-            # print(source)
-            # print(prediction)
-            # print(target[0])
-            # print()
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # executor.map 保证按输入顺序产出，进度条可用
+            for idx, pred in tqdm(
+                executor.map(translate, enumerate(sources)),
+                total=len(sources),
+            ):
+                predictions[idx] = pred
     except KeyboardInterrupt:
         print("\nInterrupted! Calculating scores on available predictions...")
     finally:
-        targets = targets[: len(predictions)]
-        bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
-        chrf_score = corpus_chrf(predictions, targets, word_order=2)
-        print(f"{MODEL}\t{bleu_score}\t{chrf_score}")
+        valid = [(p, t) for p, t in zip(predictions, targets) if p is not None]
+        if not valid:
+            print("No predictions to score.")
+            sys.exit(1)
+        preds, tgts = zip(*valid)
+
+        bleu_score = corpus_bleu(preds, tgts, tokenize="zh")
+        chrf_score = corpus_chrf(preds, tgts, word_order=2)
+        print(f"{model}\t{bleu_score}\t{chrf_score}")
 
 
 if __name__ == "__main__":
@@ -209,4 +230,5 @@ if __name__ == "__main__":
     # evaluate_vllm()
     # evaluate2_llama()
     # evaluate3_llama()
-    evaluate_lmstudio()
+    # evaluate_lmstudio("IndexTeam/Index-Translate-2B", 8)
+    evaluate_lmstudio("IndexTeam/Index-Translate-9B", 4)
