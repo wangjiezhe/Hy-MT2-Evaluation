@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from datasets import load_dataset
 from llama_cpp import GGML_TYPE_F16, GGML_TYPE_Q4_0, GGML_TYPE_Q8_0, Llama
-from openai import OpenAI
+from openai import OpenAI, omit
 from sacrebleu import corpus_bleu, corpus_chrf
 from tqdm import tqdm
 
@@ -61,19 +61,19 @@ class LlamaModel:
     def __exit__(self, exc_type, exc_value, traceback):
         self.llm.close()
 
-    def translate(self, text, prompt=EN_PROMPT, debug=False):
+    def translate(self, text, prompt=EN_PROMPT):
         output = self.llm(
             prompt + text,
             temperature=0,
         )
         pred = output["choices"][0]["text"].strip()
-        if debug:
+        if __debug__:
             print(text)
             print(pred)
             print()
         return pred
 
-    def translate_v1(self, text, prompt=EN_PROMPT, system_prompt=True, debug=False):
+    def translate_v1(self, text, prompt=EN_PROMPT, system_prompt=True):
         message = (
             [
                 {"role": "system", "content": prompt},
@@ -89,7 +89,7 @@ class LlamaModel:
             temperature=0,
         )
         pred = response.choices[0].message.content
-        if debug:
+        if __debug__:
             print(text)
             print(pred)
             print()
@@ -111,7 +111,7 @@ def evaluate_llama():
         for cache_type in ["F16", "Q8_0", "Q4_0"]:
             with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
                 # predictions = [
-                #     model.translate(source, prompt=ZH_PROMPT, debug=True)
+                #     model.translate(source, prompt=ZH_PROMPT)
                 #     for source in tqdm(sources)
                 # ]
                 predictions = [
@@ -138,7 +138,7 @@ def evaluate2_llama():
     cache_type = "F16"
     with LlamaModel(MODEL_PATH[quant], TYPE_KV[cache_type]) as model:
         predictions = [
-            model.translate_v1(source, prompt=EN_PROMPT, system_prompt=True, debug=True)
+            model.translate_v1(source, prompt=EN_PROMPT, system_prompt=True)
             for source in sources
         ]
         bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
@@ -151,38 +151,25 @@ def evaluate2_llama():
     print(eng_scores)
 
 
-def evaluate_vllm():
+def evaluate_server(
+    model,
+    base_url,
+    max_workers,
+    temperature=omit,
+    frequency_penalty=omit,
+    repetition_penalty=1.0,
+    system_prompt=ZH_PROMPT,
+):
     sources, targets = load_wmt24pp()
-    predictions = []
-
-    client = OpenAI(base_url="http://localhost:8118/v1", api_key="EMPTY")
-
-    for source in tqdm(sources):
-        response = client.chat.completions.create(
-            model="IndexTeam/Index-Translate-2B",
-            messages=[
-                # {"role": "user", "content": EN_PROMPT + source},
-                {"role": "system", "content": EN_PROMPT},
-                {"role": "user", "content": source},
-            ],
-        )
-        predictions.append(response.choices[0].message.content)
-
-    bleu_score = corpus_bleu(predictions, targets, tokenize="zh")
-    chrf_score = corpus_chrf(predictions, targets, word_order=2)
-    print(f"IndexTeam/Index-Translate-2B\t{bleu_score}\t{chrf_score}")
-
-
-def evaluate_lmstudio(model, max_workers: int = 4):
-    sources, targets = load_wmt24pp()
-    # sources = sources[:10]
-    # targets = targets[:10]
+    if __debug__:
+        sources = sources[545:555]
+        targets = targets[545:555]
     predictions = [None] * len(sources)
 
     def get_client():
         if not hasattr(_local, "client"):
             _local.client = OpenAI(
-                base_url="http://localhost:1234/v1",
+                base_url=base_url,
                 api_key="EMPTY",
                 timeout=300.0,
             )
@@ -194,10 +181,16 @@ def evaluate_lmstudio(model, max_workers: int = 4):
         response = client.chat.completions.create(
             model=model,
             messages=[
-                {"role": "system", "content": EN_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": source},
             ],
-            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+            temperature=temperature,
+            frequency_penalty=frequency_penalty,
+            seed=42,
+            extra_body={
+                "chat_template_kwargs": {"enable_thinking": False},
+                "repetition_penalty": repetition_penalty,
+            },
         )
         return idx, response.choices[0].message.content
 
@@ -209,6 +202,12 @@ def evaluate_lmstudio(model, max_workers: int = 4):
                 total=len(sources),
             ):
                 predictions[idx] = pred
+                if __debug__:
+                    print(f"{idx}:")
+                    print(sources[idx])
+                    print(pred)
+                    print(targets[idx])
+                    print()
     except KeyboardInterrupt:
         print("\nInterrupted! Calculating scores on available predictions...")
     finally:
@@ -220,12 +219,31 @@ def evaluate_lmstudio(model, max_workers: int = 4):
 
         bleu_score = corpus_bleu(preds, tgts, tokenize="zh")
         chrf_score = corpus_chrf(preds, tgts, word_order=2)
-        print(f"{model}\t{bleu_score}\t{chrf_score}")
+        print(f"{model}\t{bleu_score}\t{chrf_score}\t\tlength = {len(preds)}")
+
+
+def evaluate_lmstudio(model, max_workers=4):
+    return evaluate_server(model, "http://localhost:1234/v1", max_workers)
+
+
+def evaluate_vllm(model, max_workers=128, temperature=0):
+    return evaluate_server(
+        model,
+        "http://localhost:8118/v1",
+        max_workers,
+        temperature,
+        frequency_penalty=0.4,
+        repetition_penalty=1.1,
+    )
 
 
 if __name__ == "__main__":
-    evaluate_llama()
+    # evaluate_llama()
     # evaluate2_llama()
-    # evaluate_vllm()
+    # evaluate_vllm("IndexTeam/Index-Translate-2B", 256)
+    # evaluate_vllm("IndexTeam/Index-Translate-2B", 128)
+    evaluate_vllm("IndexTeam/Index-Translate-2B", 64)
+    # evaluate_vllm("IndexTeam/Index-Translate-2B", 32)
+    # evaluate_vllm("IndexTeam/Index-Translate-2B", 1)
     # evaluate_lmstudio("IndexTeam/Index-Translate-2B", 8)
     # evaluate_lmstudio("IndexTeam/Index-Translate-9B", 4)
