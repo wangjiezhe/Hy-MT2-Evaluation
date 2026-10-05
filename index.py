@@ -154,7 +154,7 @@ def evaluate2_llama():
 def evaluate_server(
     model,
     base_url,
-    max_workers,
+    parallel,
     temperature=omit,
     frequency_penalty=omit,
     repetition_penalty=1.0,
@@ -195,7 +195,7 @@ def evaluate_server(
         return idx, response.choices[0].message.content
 
     try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=parallel) as executor:
             # executor.map 保证按输入顺序产出，进度条可用
             for idx, pred in tqdm(
                 executor.map(translate, enumerate(sources)),
@@ -222,15 +222,21 @@ def evaluate_server(
         print(f"{model}\t{bleu_score}\t{chrf_score}\t\tlength = {len(preds)}")
 
 
-def evaluate_lmstudio(model, max_workers=4):
-    return evaluate_server(model, "http://localhost:1234/v1", max_workers)
+def evaluate_lmstudio(model, parallel=4, system_prompt=ZH_PROMPT):
+    return evaluate_server(
+        model,
+        "http://localhost:1234/v1",
+        parallel,
+        repetition_penalty=1.1,
+        system_prompt=ZH_PROMPT,
+    )
 
 
-def evaluate_vllm(model, max_workers=128, temperature=0):
+def evaluate_vllm(model, parallel=128, temperature=0):
     return evaluate_server(
         model,
         "http://localhost:8118/v1",
-        max_workers,
+        parallel,
         temperature,
         frequency_penalty=0.4,
         repetition_penalty=1.1,
@@ -245,5 +251,5 @@ if __name__ == "__main__":
     evaluate_vllm("IndexTeam/Index-Translate-2B", 64)
     # evaluate_vllm("IndexTeam/Index-Translate-2B", 32)
     # evaluate_vllm("IndexTeam/Index-Translate-2B", 1)
-    # evaluate_lmstudio("IndexTeam/Index-Translate-2B", 8)
-    # evaluate_lmstudio("IndexTeam/Index-Translate-9B", 4)
+    # evaluate_lmstudio("index-translate-2b", 8)
+    # evaluate_lmstudio("index-translate-9b", 4)
